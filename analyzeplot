@@ -1,0 +1,174 @@
+#!/bin/bash
+[ ! $(which ffprobe) ] && { echo ffprobe is necessary to run this. Maybe you can install it with: 'brew install bavc/qctools/ffmpeg --HEAD'; exit 1 ;};
+[ ! $(which gnuplot) ] && { echo gnuplot is necessary to run this. Maybe you can install it with: 'brew install gnuplot'; exit 1 ;};
+
+YMINcol=22
+YAVGcol=23
+YMAXcol=24
+UMINcol=25
+UAVGcol=26
+UMAXcol=27
+VMINcol=28
+VAVGcol=29
+VMAXcol=30
+YDIFcol=31
+UDIFcol=32
+VDIFcol=33
+TOUTcol=34
+VREPcol=35
+
+usage(){
+    echo "
+    $(basename $0)
+    
+    usage: $(basename $0) [ filteroption ] [ -o outputfile ] inputfile
+    example:
+        analyzeplot -f 300 testmovie.mov
+        will make png files that plot data of 300 frames per image
+        
+        analyzeplot -f 600 -m testmovie.mov
+        will make an animated movie that plots 600 frames visually and scrolls them as the movie plays
+    
+    filter options:
+    -f        specify the number of frames to plot per image (defaults to all frames)
+    -F        plot all frames in a single image
+    -m        movie mode. produce an animated output rather than single images
+    -h        display this help
+    
+    "
+}
+
+[ "$#" = 0 ] && { usage ; exit 1 ;};
+while getopts f:Fmh opt ; do
+    case "$opt" in
+        f) frames_plot="$OPTARG";;
+        F) full="y";;
+        m) moviemode="y";;
+        h) usage ; exit 1 ;;
+        \?) usage ; exit 1 ;;
+    esac
+done
+shift $(( ${OPTIND} - 1 ))
+
+file="$1"
+filename=`basename "$file"`
+if [ "${1#*.}" = "csv" ] ; then
+    csv="$file"
+else
+    csv="${file%.*}.csv"
+    ffprobe -f lavfi "movie=${file},values=stat=tout|vrep" -show_frames -of csv > "$csv"
+fi
+frame_length=`wc -l "$csv" | awk '{print $1}'`
+
+[ -z "${frame_length##[0-9]*}" ] || { echo Error. No frame info found. ; exit 1 ;};
+
+if [ "$full" = "y" ] ; then
+    frames_plot="$frame_length"
+else
+    frames_plot="${frames_plot:-$frame_length}"
+fi
+plot_number=$(echo "($frame_length+$frames_plot-1)/$frames_plot" | bc)
+
+graph="${file%.*}_qctools.png"
+
+YDIFmax=$(cat "$csv" | cut -d, -f $YDIFcol | awk '$0>x{x=$0};END{print x}')
+UDIFmax=$(cat "$csv" | cut -d, -f $UDIFcol | awk '$0>x{x=$0};END{print x}')
+VDIFmax=$(cat "$csv" | cut -d, -f $VDIFcol | awk '$0>x{x=$0};END{print x}')
+TOUTmax=$(cat "$csv" | cut -d, -f $TOUTcol | awk '$0>x{x=$0};END{print x}')
+VREPmax=$(cat "$csv" | cut -d, -f $VREPcol | awk '$0>x{x=$0};END{print x}')
+if [ "$moviemode" = "y" ] ; then
+    for i in `seq 1 "$frame_length"` ; do
+        graphbase=$(basename "$csv")
+        mkdir -p "/tmp/qctools"
+        graph="/tmp/qctools/${graphbase%.*}_qctools_$(printf '%06d' $i).png"
+        starting_row=`echo "$i" | bc`
+        starting_row_plot=`echo "$starting_row - 1" | bc`
+        ending_row=`echo "$i + $frames_plot" | bc`
+        [ "$ending_row" -gt "$frame_length" ] && ending_row="$frame_length"
+        starting_time=`tail -n "+$starting_row" "$csv" | head -1 | cut -d, -f7`
+        ending_time=`tail -n +$ending_row $csv | head -1 | cut -d, -f7`
+        last_frame=`tail -n 1 $csv | cut -d, -f7`
+        echo -en "\rProcessing graph $i of $frame_length    "
+        echo "set terminal png size 1920, 1080
+        set output '$graph'
+        set multiplot layout 8, 1 title '${filename%.*} qctools'
+        set bmargin 1
+        set lmargin 10
+        set rmargin 15
+        set boxwidth 0.2
+        set border 2
+        set key out vert
+        set key right top
+        set style fill solid border -1
+        set xrange [ $starting_time:$ending_time ]
+        set yrange [ 0:255 ]
+        set datafile sep ','
+        unset xtics 
+        set grid y
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$YMINcol with line t 'YMIN', '' every ::$starting_row_plot::$ending_row u 7:$YAVGcol with line t 'YAVG', '' every ::$starting_row_plot::$ending_row u 7:$YMAXcol with line t 'YMAX'
+        set tmargin 0
+        set bmargin 1
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$UMINcol with line t 'UMIN', '' every ::$starting_row_plot::$ending_row u 7:$UAVGcol with line t 'UAVG', '' every ::$starting_row_plot::$ending_row u 7:$UMAXcol with line t 'UMAX'
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$YMINcol with line t 'VMIN', '' every ::$starting_row_plot::$ending_row u 7:$UAVGcol with line t 'VAVG', '' every ::$starting_row_plot::$ending_row u 7:$UMAXcol with line t 'VMAX'
+        set yrange [ 0:$YDIFmax ]
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$YDIFcol with lines lt rgb 'red' t 'YDIF'
+        set yrange [ 0:$UDIFmax ]
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$UDIFcol with line lt rgb 'green' t 'UDIF'
+        set yrange [ 0:$VDIFmax ]
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$VDIFcol with line lt rgb 'blue' t 'VDIF'
+        set yrange [ 0:$TOUTmax ]
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$TOUTcol with line lt rgb 'violet' t 'TOUT'
+        set xtics
+        unset bmargin
+        set yrange [ 0:$VREPmax ]
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$VREPcol with line lt rgb 'cyan' t 'VREP'" | gnuplot
+    done
+    ffmpeg -y -stats -v fatal -f image2 -i "/tmp/qctools/${graphbase%.*}_qctools_%06d.png" -c:v libx264 -pix_fmt yuv420p "${csv%.*}_qctools_$(printf '%06d' $i).mp4"
+    # be careful
+    rm -f -r /tmp/qctools/
+else
+    for i in `seq 1 "$plot_number"` ; do
+        graph="${csv%.*}_qctools_$(printf '%06d' $i).png"
+        starting_row=`echo "($i - 1) * $frames_plot + 1" | bc`
+        starting_row_plot=`echo "$starting_row - 1" | bc`
+        ending_row=`echo "$i * $frames_plot" | bc`
+        [ "$ending_row" -gt "$frame_length" ] && ending_row="$frame_length"
+        starting_time=`tail -n "+$starting_row" "$csv" | head -1 | cut -d, -f7`
+        ending_time=`tail -n +$ending_row $csv | head -1 | cut -d, -f7`
+        last_frame=`tail -n 1 $csv | cut -d, -f7`
+        echo -en "\rProcessing graph $i of $frame_length    "
+        echo "set terminal png size 1920, 1080
+        set output '$graph'
+        set multiplot layout 8, 1 title '${filename%.*} qctools'
+        set bmargin 1
+        set lmargin 10
+        set rmargin 15
+        set boxwidth 0.2
+        set border 2
+        set key out vert
+        set key right top
+        set style fill solid border -1
+        set xrange [ $starting_time:$ending_time ]
+        set yrange [ 0:255 ]
+        set datafile sep ','
+        unset xtics 
+        set grid y
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$YMINcol with line t 'YMIN', '' every ::$starting_row_plot::$ending_row u 7:$YAVGcol with line t 'YAVG', '' every ::$starting_row_plot::$ending_row u 7:$YMAXcol with line t 'YMAX'
+        set tmargin 0
+        set bmargin 1
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$UMINcol with line t 'UMIN', '' every ::$starting_row_plot::$ending_row u 7:$UAVGcol with line t 'UAVG', '' every ::$starting_row_plot::$ending_row u 7:$UMAXcol with line t 'UMAX'
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$YMINcol with line t 'VMIN', '' every ::$starting_row_plot::$ending_row u 7:$UAVGcol with line t 'VAVG', '' every ::$starting_row_plot::$ending_row u 7:$UMAXcol with line t 'VMAX'
+        set yrange [ 0:$YDIFmax ]
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$YDIFcol with lines lt rgb 'red' t 'YDIF'
+        set yrange [ 0:$UDIFmax ]
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$UDIFcol with line lt rgb 'green' t 'UDIF'
+        set yrange [ 0:$VDIFmax ]
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$VDIFcol with line lt rgb 'blue' t 'VDIF'
+        set yrange [ 0:$TOUTmax ]
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$TOUTcol with line lt rgb 'violet' t 'TOUT'
+        set xtics
+        unset bmargin
+        set yrange [ 0:$VREPmax ]
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$VREPcol with line lt rgb 'cyan' t 'VREP'" | gnuplot
+    done
+fi

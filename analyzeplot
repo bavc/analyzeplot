@@ -3,19 +3,26 @@
 [ ! $(which gnuplot) ] && { echo gnuplot is necessary to run this. Maybe you can install it with: 'brew install gnuplot'; exit 1 ;};
 
 YMINcol=22
-YAVGcol=23
-YMAXcol=24
-UMINcol=25
-UAVGcol=26
-UMAXcol=27
-VMINcol=28
-VAVGcol=29
-VMAXcol=30
-YDIFcol=31
-UDIFcol=32
-VDIFcol=33
-TOUTcol=34
-VREPcol=35
+YLOWcol=23
+YAVGcol=24
+YHIGHcol=25
+YMAXcol=26
+UMINcol=27
+ULOWcol=28
+UAVGcol=29
+UHIGHcol=30
+UMAXcol=31
+VMINcol=32
+VLOWcol=33
+VAVGcol=34
+VHIGHcol=35
+VMAXcol=36
+YDIFcol=37
+UDIFcol=38
+VDIFcol=39
+TOUTcol=40
+VREPcol=41
+RANGcol=42
 
 usage(){
     echo "
@@ -56,7 +63,7 @@ if [ "${1#*.}" = "csv" ] ; then
     csv="$file"
 else
     csv="${file%.*}.csv"
-    ffprobe -f lavfi "movie=${file},values=stat=tout|vrep" -show_frames -of csv > "$csv"
+    ffprobe -f lavfi "movie=${file},values=stat=tout|vrep|rang" -show_frames -of csv > "$csv"
 fi
 frame_length=`wc -l "$csv" | awk '{print $1}'`
 
@@ -76,6 +83,7 @@ UDIFmax=$(cat "$csv" | cut -d, -f $UDIFcol | awk '$0>x{x=$0};END{print x}')
 VDIFmax=$(cat "$csv" | cut -d, -f $VDIFcol | awk '$0>x{x=$0};END{print x}')
 TOUTmax=$(cat "$csv" | cut -d, -f $TOUTcol | awk '$0>x{x=$0};END{print x}')
 VREPmax=$(cat "$csv" | cut -d, -f $VREPcol | awk '$0>x{x=$0};END{print x}')
+RANGmax=$(cat "$csv" | cut -d, -f $RANGcol | awk '$0>x{x=$0};END{print x}')
 if [ "$moviemode" = "y" ] ; then
     for i in `seq 1 "$frame_length"` ; do
         graphbase=$(basename "$csv")
@@ -109,7 +117,7 @@ if [ "$moviemode" = "y" ] ; then
         set tmargin 0
         set bmargin 1
         plot '$csv' every ::$starting_row_plot::$ending_row u 7:$UMINcol with line t 'UMIN', '' every ::$starting_row_plot::$ending_row u 7:$UAVGcol with line t 'UAVG', '' every ::$starting_row_plot::$ending_row u 7:$UMAXcol with line t 'UMAX'
-        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$YMINcol with line t 'VMIN', '' every ::$starting_row_plot::$ending_row u 7:$UAVGcol with line t 'VAVG', '' every ::$starting_row_plot::$ending_row u 7:$UMAXcol with line t 'VMAX'
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$VMINcol with line t 'VMIN', '' every ::$starting_row_plot::$ending_row u 7:$VAVGcol with line t 'VAVG', '' every ::$starting_row_plot::$ending_row u 7:$VMAXcol with line t 'VMAX'
         set yrange [ 0:$YDIFmax ]
         plot '$csv' every ::$starting_row_plot::$ending_row u 7:$YDIFcol with lines lt rgb 'red' t 'YDIF'
         set yrange [ 0:$UDIFmax ]
@@ -139,10 +147,11 @@ else
         echo -en "\rProcessing graph $i of $frame_length    "
         echo "set terminal png size 1920, 1080
         set output '$graph'
-        set multiplot layout 8, 1 title '${filename%.*} qctools'
+        set multiplot layout 9, 1 title '${filename%.*} qctools'
         set bmargin 1
         set lmargin 10
         set rmargin 15
+        set key spacing 0.7
         set boxwidth 0.2
         set border 2
         set key out vert
@@ -153,22 +162,46 @@ else
         set datafile sep ','
         unset xtics 
         set grid y
-        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$YMINcol with line t 'YMIN', '' every ::$starting_row_plot::$ending_row u 7:$YAVGcol with line t 'YAVG', '' every ::$starting_row_plot::$ending_row u 7:$YMAXcol with line t 'YMAX'
         set tmargin 0
         set bmargin 1
-        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$UMINcol with line t 'UMIN', '' every ::$starting_row_plot::$ending_row u 7:$UAVGcol with line t 'UAVG', '' every ::$starting_row_plot::$ending_row u 7:$UMAXcol with line t 'UMAX'
-        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$YMINcol with line t 'VMIN', '' every ::$starting_row_plot::$ending_row u 7:$UAVGcol with line t 'VAVG', '' every ::$starting_row_plot::$ending_row u 7:$UMAXcol with line t 'VMAX'
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$YLOWcol:$YHIGHcol w filledcu lt rgb 'gray60' notitle,\
+                 '' every ::$starting_row_plot::$ending_row u 7:$YMINcol:$YLOWcol w filledcu lt rgb 'gray40' notitle,\
+                 '' every ::$starting_row_plot::$ending_row u 7:$YHIGHcol:$YMAXcol w filledcu lt rgb 'gray40' notitle,\
+                 '' every ::$starting_row_plot::$ending_row u 7:$YMINcol  with line lt rgb 'black' t 'YMIN',\
+                 '' every ::$starting_row_plot::$ending_row u 7:$YLOWcol  with line lt rgb 'black' t 'YLOW',\
+                 '' every ::$starting_row_plot::$ending_row u 7:$YAVGcol  with line lt rgb 'black' t 'YAVG',\
+                 '' every ::$starting_row_plot::$ending_row u 7:$YHIGHcol with line lt rgb 'black' t 'YHIGH',\
+                 '' every ::$starting_row_plot::$ending_row u 7:$YMAXcol  with line lt rgb 'black' t 'YMAX'
+
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$ULOWcol:$UHIGHcol w filledcu lt rgb 'gray60' notitle,\
+                 '' every ::$starting_row_plot::$ending_row u 7:$UMINcol:$ULOWcol w filledcu lt rgb 'gray40' notitle,\
+                 '' every ::$starting_row_plot::$ending_row u 7:$UHIGHcol:$UMAXcol w filledcu lt rgb 'gray40' notitle,\
+                 '' every ::$starting_row_plot::$ending_row u 7:$UMINcol  with line lt rgb 'black' t 'UMIN',\
+                 '' every ::$starting_row_plot::$ending_row u 7:$ULOWcol  with line lt rgb 'black' t 'ULOW',\
+                 '' every ::$starting_row_plot::$ending_row u 7:$UAVGcol  with line lt rgb 'black' t 'UAVG',\
+                 '' every ::$starting_row_plot::$ending_row u 7:$UHIGHcol with line lt rgb 'black' t 'UHIGH',\
+                 '' every ::$starting_row_plot::$ending_row u 7:$UMAXcol  with line lt rgb 'black' t 'UMAX'
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$VLOWcol:$VHIGHcol w filledcu lt rgb 'gray60' notitle,\
+                 '' every ::$starting_row_plot::$ending_row u 7:$VMINcol:$VLOWcol w filledcu lt rgb 'gray40' notitle,\
+                 '' every ::$starting_row_plot::$ending_row u 7:$VHIGHcol:$VMAXcol w filledcu lt rgb 'gray40' notitle,\
+                 '' every ::$starting_row_plot::$ending_row u 7:$VMINcol  with line lt rgb 'black' t 'VMIN',\
+                 '' every ::$starting_row_plot::$ending_row u 7:$VLOWcol  with line lt rgb 'black' t 'VLOW',\
+                 '' every ::$starting_row_plot::$ending_row u 7:$VAVGcol  with line lt rgb 'black' t 'VAVG',\
+                 '' every ::$starting_row_plot::$ending_row u 7:$VHIGHcol with line lt rgb 'black' t 'VHIGH',\
+                 '' every ::$starting_row_plot::$ending_row u 7:$VMAXcol  with line lt rgb 'black' t 'VMAX'
         set yrange [ 0:$YDIFmax ]
-        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$YDIFcol with lines lt rgb 'red' t 'YDIF'
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:'0':$YDIFcol with filledcu lt rgb 'gray40' t 'YDIF'
         set yrange [ 0:$UDIFmax ]
-        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$UDIFcol with line lt rgb 'green' t 'UDIF'
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:'0':$UDIFcol with filledcu lt rgb 'gray40' t 'UDIF'
         set yrange [ 0:$VDIFmax ]
-        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$VDIFcol with line lt rgb 'blue' t 'VDIF'
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:'0':$VDIFcol with filledcu lt rgb 'gray40' t 'VDIF'
         set yrange [ 0:$TOUTmax ]
-        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$TOUTcol with line lt rgb 'violet' t 'TOUT'
-        set xtics
-        unset bmargin
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:'0':$TOUTcol with filledcu lt rgb 'gray40' t 'TOUT'
         set yrange [ 0:$VREPmax ]
-        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$VREPcol with line lt rgb 'cyan' t 'VREP'" | gnuplot
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:'0':$VREPcol with filledcu lt rgb 'gray40' t 'VREP'
+        set xtics
+        set yrange [ 0:$RANGmax ]
+        unset bmargin
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:'0':$RANGcol with filledcu lt rgb 'gray40' t 'RANG'" | gnuplot
     done
 fi

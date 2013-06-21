@@ -23,6 +23,7 @@ VDIFcol=39
 TOUTcol=40
 VREPcol=41
 RANGcol=42
+COLCOUNT=42
 
 usage(){
     echo "
@@ -41,17 +42,19 @@ usage(){
     -F        plot all frames in a single image
     -m        movie mode. produce an animated output rather than single images
     -h        display this help
+    -s        field separation mode
     
     "
 }
 
 [ "$#" = 0 ] && { usage ; exit 1 ;};
-while getopts f:Fmh opt ; do
+while getopts f:Fmhs opt ; do
     case "$opt" in
         f) frames_plot="$OPTARG";;
         F) full="y";;
         m) moviemode="y";;
         h) usage ; exit 1 ;;
+        s) splitmode="Y" ;;
         \?) usage ; exit 1 ;;
     esac
 done
@@ -63,7 +66,16 @@ if [ "${1#*.}" = "csv" ] ; then
     csv="$file"
 else
     csv="${file%.*}.csv"
-    ffprobe -f lavfi "movie=${file},values=stat=tout|vrep|rang" -show_frames -of csv > "$csv"
+    if [ "$splitmode" = "Y" ] ; then
+        csvf="${file%.*}_fields.csv"
+        option="separatefields,"
+    else
+        option=""
+    fi
+    ffprobe -f lavfi "movie=${file},${option}values=stat=tout|vrep|rang" -show_frames -of csv > "$csv"
+    if [ "$splitmode" = "Y" ] ; then
+        cat "$csv" | paste -d ',' - - > "$csvf"
+    fi
 fi
 frame_length=`wc -l "$csv" | awk '{print $1}'`
 
@@ -84,6 +96,7 @@ VDIFmax=$(cat "$csv" | cut -d, -f $VDIFcol | awk '$0>x{x=$0};END{print x}')
 TOUTmax=$(cat "$csv" | cut -d, -f $TOUTcol | awk '$0>x{x=$0};END{print x}')
 VREPmax=$(cat "$csv" | cut -d, -f $VREPcol | awk '$0>x{x=$0};END{print x}')
 RANGmax=$(cat "$csv" | cut -d, -f $RANGcol | awk '$0>x{x=$0};END{print x}')
+
 if [ "$moviemode" = "y" ] ; then
     for i in `seq 1 "$frame_length"` ; do
         graphbase=$(basename "$csv")
@@ -135,6 +148,9 @@ if [ "$moviemode" = "y" ] ; then
     # be careful
     rm -f -r /tmp/qctools/
 else
+    if [ "$splitmode" = "Y" ] ; then
+        label=" field mode"
+    fi
     for i in `seq 1 "$plot_number"` ; do
         graph="${csv%.*}_qctools_$(printf '%06d' $i).png"
         starting_row=`echo "($i - 1) * $frames_plot + 1" | bc`
@@ -147,7 +163,7 @@ else
         echo -en "\rProcessing graph $i of $frame_length    "
         echo "set terminal png size 1920, 1080
         set output '$graph'
-        set multiplot layout 9, 1 title '${filename%.*} qctools'
+        set multiplot layout 9, 1 title '${filename%.*} qctools ${label}'
         set bmargin 1
         set lmargin 10
         set rmargin 15
@@ -204,4 +220,86 @@ else
         unset bmargin
         plot '$csv' every ::$starting_row_plot::$ending_row u 7:$RANGcol with line lt rgb 'gray40' t 'RANG'" | gnuplot
     done
+    if [ "$splitmode" = "Y" ] ; then
+        for i in `seq 1 "$plot_number"` ; do
+            graph="${csvf%.*}_qctools_$(printf '%06d' $i)_fields.png"
+            starting_row=`echo "($i - 1) * $frames_plot + 1" | bc`
+            starting_row_plot=`echo "$starting_row - 1" | bc`
+            ending_row=`echo "$i * $frames_plot" | bc`
+            [ "$ending_row" -gt "$frame_length" ] && ending_row="$frame_length"
+            starting_time=`tail -n "+$starting_row" "$csvf" | head -1 | cut -d, -f7`
+            ending_time=`tail -n "+$ending_row" "$csvf" | head -1 | cut -d, -f7`
+            last_frame=`tail -n 1 "$csvf" | cut -d, -f7`
+            echo -en "\rProcessing graph $i of $frame_length    "
+            echo "set terminal png size 1920, 2160
+            set output '$graph'
+            set multiplot layout 21, 1 title '${filename%.*} qctools ${label}'
+            set bmargin 1
+            set lmargin 10
+            set rmargin 15
+            set key spacing 0.7
+            set boxwidth 0.2
+            set border 2
+            set key out vert
+            set key right top
+            set style fill solid border -1
+            set xrange [ $starting_time:$ending_time ]
+            set datafile sep ','
+            unset xtics 
+            set grid y
+            set tmargin 0
+            set bmargin 1
+            set yrange [ -128:128 ]
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${YMINcol}-\$$(echo ${YMINcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'YMIN F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${YMINcol}-\$$(echo ${YMINcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'YMIN F2'
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${YLOWcol}-\$$(echo ${YLOWcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'YLOW F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${YLOWcol}-\$$(echo ${YLOWcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'YLOW F2'
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${YAVGcol}-\$$(echo ${YAVGcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'YAVG F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${YAVGcol}-\$$(echo ${YAVGcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'YAVG F2'
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${YHIGHcol}-\$$(echo ${YHIGHcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'YHIGH F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${YHIGHcol}-\$$(echo ${YHIGHcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'YHIGH F2'
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${YMAXcol}-\$$(echo ${YMAXcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'YMAX F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${YMAXcol}-\$$(echo ${YMAXcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'YMAX F2'
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${UMINcol}-\$$(echo ${UMINcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'UMIN F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${UMINcol}-\$$(echo ${UMINcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'UMIN F2'
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${ULOWcol}-\$$(echo ${ULOWcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'ULOW F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${ULOWcol}-\$$(echo ${ULOWcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'ULOW F2'
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${UAVGcol}-\$$(echo ${UAVGcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'UAVG F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${UAVGcol}-\$$(echo ${UAVGcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'UAVG F2'
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${UHIGHcol}-\$$(echo ${UHIGHcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'UHIGH F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${UHIGHcol}-\$$(echo ${UHIGHcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'UHIGH F2'
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${UMAXcol}-\$$(echo ${UMAXcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'UMAX F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${UMAXcol}-\$$(echo ${UMAXcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'UMAX F2'
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${VMINcol}-\$$(echo ${VMINcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'VMIN F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${VMINcol}-\$$(echo ${VMINcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'VMIN F2'
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${VLOWcol}-\$$(echo ${VLOWcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'VLOW F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${VLOWcol}-\$$(echo ${VLOWcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'VLOW F2'
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${VAVGcol}-\$$(echo ${VAVGcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'VAVG F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${VAVGcol}-\$$(echo ${VAVGcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'VAVG F2'
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${VHIGHcol}-\$$(echo ${VHIGHcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'VHIGH F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${VHIGHcol}-\$$(echo ${VHIGHcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'VHIGH F2'
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${VMAXcol}-\$$(echo ${VMAXcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'VMAX F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${VMAXcol}-\$$(echo ${VMAXcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'VMAX F2'
+            set yrange [ -$(echo ${YDIFmax}/2 | bc):$(echo ${YDIFmax}/2 | bc) ]
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${YDIFcol}-\$$(echo ${YDIFcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'YDIF F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${YDIFcol}-\$$(echo ${YDIFcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'YDIF F2'
+            set yrange [ -$(echo ${UDIFmax}/2 | bc):$(echo ${UDIFmax}/2 | bc) ]
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${UDIFcol}-\$$(echo ${UDIFcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'UDIF F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${UDIFcol}-\$$(echo ${UDIFcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'UDIF F2'
+            set yrange [ -$(echo ${VDIFmax}/2 | bc):$(echo ${VDIFmax}/2 | bc) ]
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${VDIFcol}-\$$(echo ${VDIFcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'VDIF F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${VDIFcol}-\$$(echo ${VDIFcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'VDIF F2'
+            set yrange [ -$(echo ${TOUTmax}/2 | bc):$(echo ${TOUTmax}/2 | bc) ]
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${TOUTcol}-\$$(echo ${TOUTcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'TOUT F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${TOUTcol}-\$$(echo ${TOUTcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'TOUT F2'
+            set yrange [ -2:2 ]
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${VREPcol}-\$$(echo ${VREPcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'VREP F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${VREPcol}-\$$(echo ${VREPcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'VREP F2'
+            set xtics
+            unset bmargin
+            set yrange [ -100:100 ]
+            plot '$csvf' every ::$starting_row_plot::$ending_row u 7:(\$${RANGcol}-\$$(echo ${RANGcol}+${COLCOUNT} | bc)) w filledcurves above y1=0 lt 1 t 'RANG F1',\
+                      '' every ::$starting_row_plot::$ending_row u 7:(\$${RANGcol}-\$$(echo ${RANGcol}+${COLCOUNT} | bc)) w filledcurves below y1=0 lt 2 t 'RANG F2'" | gnuplot
+        done
+    fi
 fi

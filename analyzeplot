@@ -94,8 +94,8 @@ if [ "$moviemode" = "y" ] ; then
         ending_row=`echo "$i + $frames_plot" | bc`
         [ "$ending_row" -gt "$frame_length" ] && ending_row="$frame_length"
         starting_time=`tail -n "+$starting_row" "$csv" | head -1 | cut -d, -f7`
-        ending_time=`tail -n +$ending_row $csv | head -1 | cut -d, -f7`
-        last_frame=`tail -n 1 $csv | cut -d, -f7`
+        ending_time=`tail -n "+$ending_row" "$csv" | head -1 | cut -d, -f7`
+        last_frame=`tail -n 1 "$csv" | cut -d, -f7`
         echo -en "\rProcessing graph $i of $frame_length    "
         echo "set terminal png size 1920, 1080
         set output '$graph'
@@ -142,8 +142,8 @@ else
         ending_row=`echo "$i * $frames_plot" | bc`
         [ "$ending_row" -gt "$frame_length" ] && ending_row="$frame_length"
         starting_time=`tail -n "+$starting_row" "$csv" | head -1 | cut -d, -f7`
-        ending_time=`tail -n +$ending_row $csv | head -1 | cut -d, -f7`
-        last_frame=`tail -n 1 $csv | cut -d, -f7`
+        ending_time=`tail -n "+$ending_row" "$csv" | head -1 | cut -d, -f7`
+        last_frame=`tail -n 1 "$csv" | cut -d, -f7`
         echo -en "\rProcessing graph $i of $frame_length    "
         echo "set terminal png size 1920, 1080
         set output '$graph'
@@ -190,18 +190,18 @@ else
                  '' every ::$starting_row_plot::$ending_row u 7:$VHIGHcol with line lt rgb 'black' t 'VHIGH',\
                  '' every ::$starting_row_plot::$ending_row u 7:$VMAXcol  with line lt rgb 'black' t 'VMAX'
         set yrange [ 0:$YDIFmax ]
-        plot '$csv' every ::$starting_row_plot::$ending_row u 7:'0':$YDIFcol with filledcu lt rgb 'gray40' t 'YDIF'
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$YDIFcol with line lt rgb 'gray40' t 'YDIF'
         set yrange [ 0:$UDIFmax ]
-        plot '$csv' every ::$starting_row_plot::$ending_row u 7:'0':$UDIFcol with filledcu lt rgb 'gray40' t 'UDIF'
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$UDIFcol with line lt rgb 'gray40' t 'UDIF'
         set yrange [ 0:$VDIFmax ]
-        plot '$csv' every ::$starting_row_plot::$ending_row u 7:'0':$VDIFcol with filledcu lt rgb 'gray40' t 'VDIF'
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$VDIFcol with line lt rgb 'gray40' t 'VDIF'
         set yrange [ 0:$TOUTmax ]
-        plot '$csv' every ::$starting_row_plot::$ending_row u 7:'0':$TOUTcol with filledcu lt rgb 'gray40' t 'TOUT'
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$TOUTcol with line lt rgb 'gray40' t 'TOUT'
         set yrange [ 0:$VREPmax ]
-        plot '$csv' every ::$starting_row_plot::$ending_row u 7:'0':$VREPcol with filledcu lt rgb 'gray40' t 'VREP'
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$VREPcol with line lt rgb 'gray40' t 'VREP'
         set xtics
         set yrange [ 0:$RANGmax ]
         unset bmargin
-        plot '$csv' every ::$starting_row_plot::$ending_row u 7:'0':$RANGcol with filledcu lt rgb 'gray40' t 'RANG'" | gnuplot
+        plot '$csv' every ::$starting_row_plot::$ending_row u 7:$RANGcol with line lt rgb 'gray40' t 'RANG'" | gnuplot
     done
 fi
